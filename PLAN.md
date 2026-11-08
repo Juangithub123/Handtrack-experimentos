@@ -4,7 +4,7 @@ App local para Windows, que funcione sin conexión, y explore efectos interactiv
 MediaPipe (Hands, Pose, Face y Segmentation) sobre una GPU NVIDIA. Tiene una **ventana de
 controles** (operador) y una **ventana de proyección** (salida a pantalla, proyector o Spout).
 
-> Estado: **planificación**. Las decisiones pendientes están marcadas con ❓.
+> Estado: **planificación cerrada**. Las decisiones están en la sección 6, y la próxima fase es la 0 + 1.
 > Este documento es el punto de partida para la sesión de Claude Code en Windows.
 
 ---
@@ -183,10 +183,10 @@ presets/
 - [ ] **Blob tracking**, **Atravesar el hueco**, **Música con el cuerpo** (Web Audio y MIDI
       out), **Face FX**.
 - [ ] Presets y escenas en JSON, con hotkeys.
-- [ ] Calibración cámara↔proyección (4 esquinas).
+- [ ] Ajuste simple de encuadre: espejo, zoom y offset (sin calibración).
 
 ### Fase 3 — Show y extensibilidad
-- [ ] Salida **Spout** y **OSC** de landmarks (para TouchDesigner, Resolume y Max).
+- [ ] Salida **OSC** (landmarks y música) y **MIDI** (vía loopMIDI hacia un DAW).
 - [ ] Grabación de la salida y de las sesiones de tracking (replay sin cámara para
       desarrollar).
 - [ ] Multi-persona, gesture recognizer y transiciones entre escenas.
@@ -194,29 +194,53 @@ presets/
 
 ### Fase 4 — Futuro
 - [ ] Tracker ONNX Runtime CUDA/TensorRT (opción C) detrás del mismo `TrackingFrame`.
+- [ ] Salida Spout/NDI (opcional).
+- [ ] Calibración cámara↔proyección por 4 esquinas (opcional).
 - [ ] Varias cámaras y cámara de profundidad.
 - [ ] Editor de efectos y shaders en vivo.
 
 ---
 
-## 6. Decisiones pendientes ❓
-1. ¿Stack A (Electron/TS, GPU) o B (Python, CPU)? ¿Qué lenguaje te resulta más cómodo para
-   modificar los efectos vos mismo?
-2. ¿Hardware? Modelo de GPU, de cámara (¿webcam 720p/1080p a 60 fps?) y CPU.
-3. Salida de proyección: ¿segundo monitor o proyector solamente, o también Spout/NDI hacia
-   otro software?
-4. Música: ¿synth interno, MIDI hacia un DAW (Ableton, etc.), o ambos?
-5. ¿Una persona o varias a la vez frente a la cámara?
-6. ¿Se proyecta **sobre** la persona o pared (requiere calibración) o en una pantalla
-   enfrentada, tipo espejo?
+## 6. Decisiones tomadas ✅
+| Tema | Decisión | Implicancias |
+|---|---|---|
+| Stack | **Opción A**: Electron + Vite + TypeScript + MediaPipe Tasks Vision (delegado GPU) | Opciones C y D quedan como fases futuras. |
+| GPU | **NVIDIA GTX 1060** (Pascal) | WebGL2 sin problemas. Usar `pose_landmarker_lite` por defecto y `full` como opción. Evitar `heavy`. |
+| CPU | AMD quad core | Mantener el tracking fuera del hilo de UI (Worker) y no correr modelos que no se usan. |
+| Cámara | Webcam USB 1080p | Capturar a 1280×720 para inferir (más fps) y usar 1080p solo si un efecto lo necesita. Elegir resolución y fps desde los controles. |
+| Salida | Segunda pantalla o proyector, en ventana a pantalla completa | **Sin Spout ni NDI** por ahora. |
+| Música | **Synth interno** (Web Audio / Tone.js) | Salida **OSC y MIDI** en una fase posterior. Dejar la interfaz `AudioOut` preparada para eso. |
+| Personas | **Una y varias** | Parámetro `maxPersonas` (1–4) en los controles: `numHands = 2×N`, `numPoses = N`, `numFaces = N`. Los efectos deben iterar sobre arrays, nunca suponer una sola persona. Con varias personas la calidad de la pose baja: avisarlo en la UI. |
+| Proyección | Sobre pared, **sin calibración** | Mapeo directo de cámara a pantalla con espejo, escala y offset opcionales. La calibración por 4 esquinas queda fuera de alcance. |
+
+### Ajustes al plan por estas decisiones
+- Fase 2: se quita "Calibración cámara↔proyección". Se agrega "Ajuste simple de encuadre"
+  (espejo, zoom, offset).
+- Fase 3: "Spout" pasa a la Fase 4 (opcional). Se suman "salida OSC" y "salida MIDI (vía
+  loopMIDI)" a la música.
+- Segmentación con varias personas: `selfie_segmenter` devuelve una sola máscara con todas las
+  personas juntas, lo que alcanza para blob tracking y para el hueco. Si un efecto necesita una
+  máscara por persona, usar las máscaras de `PoseLandmarker` (`outputSegmentationMasks`).
 
 ---
 
-## 7. Prompt sugerido para arrancar en la sesión de Windows
+## 7. Prompt para arrancar en la sesión de Windows
 
-> Leé `PLAN.md`. Vamos con la **Opción [A/B]**. Implementá la **Fase 0 y la Fase 1**:
-> estructura de carpetas, 2 ventanas (controles y proyección), selección de cámara,
-> TrackerManager con hands y pose cargando los modelos desde `assets/` (sin internet),
-> sistema de efectos con parámetros autogenerados y los efectos Debug, Pintura a mano y
-> Partículas. Agregá un script para descargar los modelos `.task` una sola vez y verificá
-> que la app funcione con la red desconectada. Mi GPU es ___ y mi cámara es ___.
+> Leé `PLAN.md` y `CLAUDE.md` (las decisiones ya están tomadas en la sección 6). Implementá la
+> **Fase 0 y la Fase 1** con la Opción A (Electron + Vite + TypeScript + MediaPipe Tasks
+> Vision con delegado GPU):
+> - Estructura de carpetas según la sección 3.
+> - 2 ventanas: controles y proyección. La proyección va a pantalla completa en el monitor
+>   elegido (la pared).
+> - Selección de cámara y resolución. Por defecto 1280×720 desde la webcam USB 1080p.
+> - `TrackerManager` con hands y pose en un Worker. Debe cargar los modelos desde `assets/`
+>   (sin internet), tener el parámetro `maxPersonas` (1–4) y suavizado One Euro.
+> - Sistema de efectos con parámetros autogenerados, y los efectos **Debug**, **Pintura a
+>   mano** y **Partículas**, todos compatibles con varias personas.
+> - Panel de fps y latencia.
+> - Un script `npm run fetch-models` que descargue una única vez los `.task` y los `wasm`.
+> - Un build `.exe` portable con electron-builder.
+>
+> Verificá que la app funcione con la red desconectada y que el renderer esté usando la GTX
+> 1060 (en `chrome://gpu` o con `app.getGPUInfo`). Al terminar, actualizá los checkboxes de
+> `PLAN.md`.
